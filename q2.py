@@ -29,9 +29,15 @@ def run_rules(facts, rules):
     fired_sorted = sorted(fired, key=lambda r: r["priority"], reverse=True)
     return fired_sorted[0]["action"], fired_sorted
 
-RULES = json.loads('json_q2.json')
+GITHUB_JSON_URL = "https://raw.githubusercontent.com/vivianyyen/LabTest-SD23048/main/json_q2.json"
 
-
+try:
+    response = requests.get(GITHUB_JSON_URL)
+    response.raise_for_status()
+    RULES = json.loads(GITHUB_JSON_URL)
+except Exception as e:
+    st.error(f"Failed to load rules from GitHub. Using default empty rules. Details: {e}")
+    RULES = []
 st.set_page_config(page_title="Smart Home AC Controller", layout="wide")
 st.title("Rule-Based Smart Home Air-Conditioner")
 
