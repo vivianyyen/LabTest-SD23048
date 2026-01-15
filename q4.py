@@ -1,50 +1,66 @@
 import streamlit as st
-from PyPDF2 import PdfReader
-import nltk
-from nltk.tokenize import sent_tokenize
-import os
 
-# ----------------------
-# Step 0: Setup NLTK for cloud
-# ----------------------
-# Create a local folder for nltk data
-nltk_data_dir = os.path.join(os.path.dirname(__file__), "nltk_data")
-os.makedirs(nltk_data_dir, exist_ok=True)
+st.set_page_config(page_title="Text Chunker (Word-based)", layout="wide")
 
-# Download punkt into this folder (works even in Streamlit Cloud)
-nltk.download("punkt", download_dir=nltk_data_dir)
+st.title("Text Chunker (by Number of Words)")
 
-# Tell NLTK to look here first
-nltk.data.path.append(nltk_data_dir)
+st.write(
+    "This app splits a long text into chunks, where each chunk contains **N words** "
+    "similar to your `chunker(input_data, N)` function."
+)
 
-# ----------------------
-# Streamlit UI
-# ----------------------
-st.title("PDF Text Chunking Web App")
+def chunker(input_data: str, N: int):
+    input_words = input_data.split()
+    output = []
+    cur_chunk = []
+    count = 0
+    for word in input_words:
+        cur_chunk.append(word)
+        count += 1
+        if count == N:
+            output.append(" ".join(cur_chunk))
+            count, cur_chunk = 0, []
+    # Add remaining words (if any)
+    if cur_chunk:
+        output.append(" ".join(cur_chunk))
+    return output
 
-uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+default_text = (
+    "Ku Muhammad Na'im Ku Khalif is actively involved in teaching, research, and "
+    "community outreach. He regularly works with AI, data science, and Internet "
+    "safety campaigns across schools in Pahang, collaborating with various agencies."
+)
 
-if uploaded_file:
-    reader = PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text += page_text + " "
+text = st.text_area("Input text", value=default_text, height=200)
 
-    st.subheader("Sample text (indices 58–68)")
-    st.write(text[58:68])
+chunk_size = st.number_input(
+    "Number of words per chunk (N)",
+    min_value=1,
+    max_value=2000,
+    value=20,
+    step=1,
+)
 
-    # ----------------------
-    # Sentence tokenization
-    # ----------------------
-    sentences = sent_tokenize(text)
-    st.subheader("Sentence-based Chunks")
-    st.write(f"Total sentences found: {len(sentences)}")
+if st.button("Create chunks"):
+    if not text.strip():
+        st.warning("Please provide some text to chunk.")
+    else:
+        chunks = chunker(text, int(chunk_size))
+        st.success(f"Number of text chunks = {len(chunks)}")
 
-    # Display first 10 sentences
-    for i, s in enumerate(sentences[:10], start=1):
-        st.write(f"{i}. {s}")
+        # Let user select which chunk to view
+        idx = st.number_input(
+            "Select chunk index to view",
+            min_value=1,
+            max_value=len(chunks),
+            value=1,
+            step=1,
+        )
+        st.subheader(f"Chunk {idx}")
+        st.write(chunks[idx - 1])
 
-else:
-    st.info("Upload a PDF to see sentence chunks.")
+        with st.expander("Show all chunks"):
+            for i, ch in enumerate(chunks, start=1):
+                st.markdown(f"**Chunk {i}**")
+                st.write(ch)
+                st.markdown("---")
