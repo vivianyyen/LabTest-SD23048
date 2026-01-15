@@ -1,10 +1,11 @@
 import json
-from typing import List, Dict, Any, Tuple
 import operator
+import requests
 import streamlit as st
+from typing import List, Dict, Any
 
 # ----------------------------
-# 1) Rule engine (UNCHANGED)
+# 1) Rule Engine
 # ----------------------------
 OPS = {
     "==": operator.eq,
@@ -15,174 +16,6 @@ OPS = {
     "<=": operator.le,
 }
 
-# ----------------------------
-# 2) Default Smart Home AC Rules (use your JSON keys)
-# ----------------------------
-DEFAULT_RULES: List[Dict[str, Any]] = [
-   {
-    "name": "Windows open \u2192 turn AC off",
-    "priority": 100,
-    "conditions": [
-      [
-        "windows_open",
-        "==",
-        true
-      ]
-    ],
-    "action": {
-      "ac_mode": "OFF",
-      "fan_speed": "LOW",
-      "setpoint": null,
-      "reason": "Windows are open"
-    }
-  },
-  {
-    "name": "No one home \u2192 eco mode",
-    "priority": 90,
-    "conditions": [
-      [
-        "occupancy",
-        "==",
-        "EMPTY"
-      ],
-      [
-        "temperature",
-        ">=",
-        24
-      ]
-    ],
-    "action": {
-      "ac_mode": "ECO",
-      "fan_speed": "LOW",
-      "setpoint": 27,
-      "reason": "Home empty; save energy"
-    }
-  },
-  {
-    "name": "Hot & humid (occupied) \u2192 cool strong",
-    "priority": 80,
-    "conditions": [
-      [
-        "occupancy",
-        "==",
-        "OCCUPIED"
-      ],
-      [
-        "temperature",
-        ">=",
-        30
-      ],
-      [
-        "humidity",
-        ">=",
-        70
-      ]
-    ],
-    "action": {
-      "ac_mode": "COOL",
-      "fan_speed": "HIGH",
-      "setpoint": 23,
-      "reason": "Hot and humid"
-    }
-  },
-  {
-    "name": "Hot (occupied) \u2192 cool",
-    "priority": 70,
-    "conditions": [
-      [
-        "occupancy",
-        "==",
-        "OCCUPIED"
-      ],
-      [
-        "temperature",
-        ">=",
-        28
-      ]
-    ],
-    "action": {
-      "ac_mode": "COOL",
-      "fan_speed": "MEDIUM",
-      "setpoint": 24,
-      "reason": "Temperature high"
-    }
-  },
-  {
-    "name": "Slightly warm (occupied) \u2192 gentle cool",
-    "priority": 60,
-    "conditions": [
-      [
-        "occupancy",
-        "==",
-        "OCCUPIED"
-      ],
-      [
-        "temperature",
-        ">=",
-        26
-      ],
-      [
-        "temperature",
-        "<",
-        28
-      ]
-    ],
-    "action": {
-      "ac_mode": "COOL",
-      "fan_speed": "LOW",
-      "setpoint": 25,
-      "reason": "Slightly warm"
-    }
-  },
-  {
-    "name": "Night (occupied) \u2192 sleep mode",
-    "priority": 75,
-    "conditions": [
-      [
-        "occupancy",
-        "==",
-        "OCCUPIED"
-      ],
-      [
-        "time_of_day",
-        "==",
-        "NIGHT"
-      ],
-      [
-        "temperature",
-        ">=",
-        26
-      ]
-    ],
-    "action": {
-      "ac_mode": "SLEEP",
-      "fan_speed": "LOW",
-      "setpoint": 26,
-      "reason": "Night comfort"
-    }
-  },
-  {
-    "name": "Too cold \u2192 turn off",
-    "priority": 85,
-    "conditions": [
-      [
-        "temperature",
-        "<=",
-        22
-      ]
-    ],
-    "action": {
-      "ac_mode": "OFF",
-      "fan_speed": "LOW",
-      "setpoint": null,
-      "reason": "Already cold"
-    }
-  }
-]
-
-# ----------------------------
-# 3) Rule Engine Functions (UNCHANGED)
-# ----------------------------
 def evaluate_condition(facts, cond):
     field, op, value = cond
     return OPS[op](facts[field], value)
@@ -198,8 +31,19 @@ def run_rules(facts, rules):
     fired_sorted = sorted(fired, key=lambda r: r["priority"], reverse=True)
     return fired_sorted[0]["action"], fired_sorted
 
+
+GITHUB_JSON_URL = "https://raw.githubusercontent.com/vivianyyen/LabTest-SD23048/main/json_q2.json"
+
+try:
+    response = requests.get(GITHUB_JSON_URL)
+    response.raise_for_status()
+    RULES = json.loads(response.text)
+except Exception as e:
+    st.error(f"Failed to load rules from GitHub. Using default empty rules. Details: {e}")
+    RULES = []
+
 # ----------------------------
-# 4) Streamlit UI (same template)
+# 3) Streamlit UI
 # ----------------------------
 st.set_page_config(page_title="Smart Home AC Controller", layout="wide")
 st.title("Rule-Based Smart Home Air-Conditioner")
@@ -213,8 +57,9 @@ with st.sidebar:
     windows_open = st.checkbox("Windows open")
 
     st.divider()
-    st.header("Rules (JSON)")
-    rules_text = st.text_area("Edit rules", json.dumps(DEFAULT_RULES, indent=2), height=300)
+    st.header("Rules Source")
+    st.caption("Rules loaded directly from GitHub JSON file")
+    st.code(json.dumps(RULES, indent=2), language="json")
 
     run = st.button("Evaluate", type="primary")
 
@@ -229,16 +74,10 @@ facts = {
 st.subheader("Current Home State")
 st.json(facts)
 
-try:
-    rules = json.loads(rules_text)
-except:
-    st.error("Invalid JSON. Using default rules.")
-    rules = DEFAULT_RULES
-
 st.divider()
 
 if run:
-    action, fired = run_rules(facts, rules)
+    action, fired = run_rules(facts, RULES)
 
     col1, col2 = st.columns(2)
 
@@ -259,4 +98,4 @@ Reason: **{action['reason']}**
             for r in fired:
                 st.write(f"{r['name']} (priority {r['priority']})")
 else:
-    st.info("Set values and click **Evaluate**.")
+    st.info("Set home conditions and click **Evaluate**.")
