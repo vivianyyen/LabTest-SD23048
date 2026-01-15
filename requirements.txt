@@ -3,4 +3,7 @@ streamlit
 matplotlib
 torch
 torchvision
-PIL
+Pillow
+requests
+nltk
+PyPDF2
