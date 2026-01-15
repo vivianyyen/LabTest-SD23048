@@ -1,152 +1,144 @@
-import math
 import random
-from dataclasses import dataclass
-from typing import Callable, Tuple, List
 import numpy as np
-import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
 
-# -------------------- Problem Definitions --------------------
-@dataclass
-class GAProblem:
-    name: str
-    chromosome_type: str
-    dim: int
-    bounds: Tuple[float, float] | None
-    fitness_fn: Callable[[np.ndarray], float]
+# ---- Fixed GA Parameters (updated as requested) ----
+POP_SIZE = 300          # 1) population setup
+CHROM_LEN = 80          # 3) length of individuals
+TARGET_ONES = 40        # 2) optimum at ones == 40
+MAX_FITNESS = 80        # 4) return value is 80 when ones == 40
+N_GENERATIONS = 50      # 5) number of generations
 
-# ---- Assignment OneMax with peak at 40 ones ----
-def make_peak40(dim: int) -> GAProblem:
-    def fitness(x: np.ndarray) -> float:
-        ones = np.sum(x)
-        return 80 - abs(ones - 40)   # max fitness 80 at ones=40
+# ---- GA Hyperparameters (simple & sensible) ----
+TOURNAMENT_K = 3
+CROSSOVER_RATE = 0.9
+MUTATION_RATE = 1.0 / CHROM_LEN  # ~1 bit flip expected per chromosome
 
-    return GAProblem(
-        name="OneMax Peak@40 (80 bits)",
-        chromosome_type="bit",
-        dim=dim,
-        bounds=None,
-        fitness_fn=fitness,
-    )
+# ---- Fitness Function ----
+def fitness(individual: np.ndarray) -> float:
+    """
+    Fitness peaks when the number of 1s equals TARGET_ONES.
+    Max fitness is MAX_FITNESS (=80) at ones == 40.
+    """
+    ones = int(individual.sum())
+    return MAX_FITNESS - abs(ones - TARGET_ONES)
 
-# -------------------- GA Operators (UNCHANGED) --------------------
-def init_population(problem: GAProblem, pop_size: int, rng):
-    return rng.integers(0, 2, size=(pop_size, problem.dim), dtype=np.int8)
+# ---- GA Operators ----
+def init_population(pop_size: int, chrom_len: int) -> np.ndarray:
+    return np.random.randint(0, 2, size=(pop_size, chrom_len), dtype=np.int8)
 
-def tournament_selection(fitness, k, rng):
-    idxs = rng.integers(0, fitness.size, size=k)
-    return int(idxs[np.argmax(fitness[idxs])])
+def tournament_selection(pop: np.ndarray, fits: np.ndarray, k: int) -> np.ndarray:
+    idxs = np.random.randint(0, len(pop), size=k)
+    best_idx = idxs[np.argmax(fits[idxs])]
+    return pop[best_idx].copy()
 
-def one_point_crossover(a, b, rng):
-    point = int(rng.integers(1, a.size))
-    c1 = np.concatenate([a[:point], b[point:]])
-    c2 = np.concatenate([b[:point], a[point:]])
+def single_point_crossover(p1: np.ndarray, p2: np.ndarray):
+    if np.random.rand() > CROSSOVER_RATE:
+        return p1.copy(), p2.copy()
+    point = np.random.randint(1, CHROM_LEN)  # cut between [1 .. CHROM_LEN-1]
+    c1 = np.concatenate([p1[:point], p2[point:]])
+    c2 = np.concatenate([p2[:point], p1[point:]])
     return c1, c2
 
-def bit_mutation(x, mut_rate, rng):
-    mask = rng.random(x.shape) < mut_rate
-    y = x.copy()
-    y[mask] = 1 - y[mask]
-    return y
+def mutate(individual: np.ndarray) -> np.ndarray:
+    mask = np.random.rand(CHROM_LEN) < MUTATION_RATE
+    individual[mask] = 1 - individual[mask]
+    return individual
 
-def evaluate(pop, problem):
-    return np.array([problem.fitness_fn(ind) for ind in pop], dtype=float)
+def evolve(pop: np.ndarray, generations: int):
+    best_fitness_per_gen = []
+    best_individual = None
+    best_f = -np.inf
 
-# -------------------- GA Engine (UNCHANGED) --------------------
-def run_ga(problem, pop_size, generations, crossover_rate, mutation_rate,
-           tournament_k, elitism, seed, stream_live=True):
+    for _ in range(generations):
+        fits = np.array([fitness(ind) for ind in pop])
 
-    rng = np.random.default_rng(seed)
-    pop = init_population(problem, pop_size, rng)
-    fit = evaluate(pop, problem)
+        # Track best this generation and overall
+        gen_best_idx = np.argmax(fits)
+        gen_best = pop[gen_best_idx]
+        gen_best_f = fits[gen_best_idx]
+        best_fitness_per_gen.append(float(gen_best_f))
 
-    chart_area = st.empty()
-    best_area = st.empty()
+        if gen_best_f > best_f:
+            best_f = float(gen_best_f)
+            best_individual = gen_best.copy()
 
-    history_best, history_avg, history_worst = [], [], []
+        # Create next generation
+        new_pop = []
+        while len(new_pop) < len(pop):
+            p1 = tournament_selection(pop, fits, TOURNAMENT_K)
+            p2 = tournament_selection(pop, fits, TOURNAMENT_K)
+            c1, c2 = single_point_crossover(p1, p2)
+            c1 = mutate(c1)
+            c2 = mutate(c2)
+            new_pop.extend([c1, c2])
+        pop = np.array(new_pop[:len(pop)], dtype=np.int8)
 
-    for gen in range(generations):
-        best = float(np.max(fit))
-        avg = float(np.mean(fit))
-        worst = float(np.min(fit))
+    return best_individual, best_f, best_fitness_per_gen
 
-        history_best.append(best)
-        history_avg.append(avg)
-        history_worst.append(worst)
+# ---- Streamlit UI ----
+st.set_page_config(page_title="Bit Pattern GA (80 bits, target ones = 40)", page_icon="🧬", layout="centered")
 
-        if stream_live:
-            df = pd.DataFrame({"Best": history_best, "Average": history_avg, "Worst": history_worst})
-            chart_area.line_chart(df)
-            best_area.markdown(f"Generation {gen+1}/{generations} — Best fitness: **{best:.2f}**")
+st.title("🧬 Genetic Algorithm: Evolve a 80-bit Pattern")
+st.caption(
+    "Fixed requirements: Population = 300, Chromosome Length = 80, Generations = 50.\n"
+    "Fitness peaks at ones = 40, with max fitness = 80."
+)
 
-        # Elitism
-        elite_idx = np.argsort(fit)[-elitism:]
-        elites = pop[elite_idx]
-
-        next_pop = []
-
-        while len(next_pop) < pop_size - elitism:
-            i1 = tournament_selection(fit, tournament_k, rng)
-            i2 = tournament_selection(fit, tournament_k, rng)
-
-            p1, p2 = pop[i1], pop[i2]
-
-            if rng.random() < crossover_rate:
-                c1, c2 = one_point_crossover(p1, p2, rng)
-            else:
-                c1, c2 = p1.copy(), p2.copy()
-
-            c1 = bit_mutation(c1, mutation_rate, rng)
-            c2 = bit_mutation(c2, mutation_rate, rng)
-
-            next_pop.append(c1)
-            if len(next_pop) < pop_size - elitism:
-                next_pop.append(c2)
-
-        pop = np.vstack([np.array(next_pop), elites])
-        fit = evaluate(pop, problem)
-
-    best_idx = np.argmax(fit)
-    return pop[best_idx], fit[best_idx], history_best, history_avg, history_worst
-
-# -------------------- Streamlit UI (Same Template) --------------------
-st.set_page_config(page_title="GA Peak@40", layout="wide")
-st.title("Genetic Algorithm – Peak at 40 Ones")
-
-st.sidebar.header("Fixed Assignment Parameters")
-st.sidebar.write("Population = 300")
-st.sidebar.write("Chromosome Length = 80")
-st.sidebar.write("Generations = 50")
-st.sidebar.write("Target Ones = 40")
-st.sidebar.write("Max Fitness = 80")
-
-# Fixed problem
-problem = make_peak40(80)  # chromosome length = 80
-
-# Fixed GA parameters
-pop_size = 300
-generations = 50
-crossover_rate = 0.9
-mutation_rate = 0.01
-tournament_k = 3
-elitism = 2
-seed = 42
-
-if st.button("Run GA"):
-    best, best_fit, best_hist, avg_hist, worst_hist = run_ga(
-        problem, pop_size, generations, crossover_rate,
-        mutation_rate, tournament_k, elitism, seed
+with st.expander("ℹ️ Problem setup (fixed by requirement)", expanded=True):
+    st.write(
+        f"""
+- **Population size**: `{POP_SIZE}`  
+- **Chromosome length**: `{CHROM_LEN}`  
+- **Target number of ones**: `{TARGET_ONES}`  
+- **Max fitness at optimum**: `{MAX_FITNESS}` (when ones = {TARGET_ONES})  
+- **Generations**: `{N_GENERATIONS}`  
+- **Selection**: Tournament (k={TOURNAMENT_K})  
+- **Crossover**: Single-point (rate={CROSSOVER_RATE})  
+- **Mutation**: Bit-flip (per-bit rate={MUTATION_RATE:.4f})
+"""
     )
 
-    st.subheader("Fitness Curve")
-    st.line_chart(pd.DataFrame({
-        "Best": best_hist,
-        "Average": avg_hist,
-        "Worst": worst_hist
-    }))
+col1, col2 = st.columns(2)
+with col1:
+    seed = st.number_input("Random seed (for reproducibility)", min_value=0, value=42, step=1)
+with col2:
+    run_btn = st.button("Run Genetic Algorithm", type="primary")
 
-    st.subheader("Best 80-bit Pattern")
-    bitstring = "".join(best.astype(str))
-    st.code(bitstring)
-    st.write("Number of ones:", int(np.sum(best)))
-    st.write("Fitness:", best_fit)
+if run_btn:
+    # Reproducibility
+    random.seed(seed)
+    np.random.seed(seed)
+
+    # Initialize and evolve
+    population = init_population(POP_SIZE, CHROM_LEN)
+    best_ind, best_fit, curve = evolve(population, N_GENERATIONS)
+
+    # Results
+    ones_count = int(best_ind.sum())
+    zeros_count = CHROM_LEN - ones_count
+    bitstring = "".join(map(str, best_ind.tolist()))
+
+    st.subheader("🏁 Best Individual Found")
+    st.metric(label="Best Fitness", value=f"{best_fit:.0f}")
+    st.write(f"**Ones**: {ones_count} | **Zeros**: {zeros_count} | **Length**: {CHROM_LEN}")
+    st.code(bitstring, language="text")
+
+    # Convergence plot
+    st.subheader("📉 Convergence (Best Fitness per Generation)")
+    fig, ax = plt.subplots()
+    ax.plot(range(1, len(curve) + 1), curve, linewidth=2)
+    ax.set_xlabel("Generation")
+    ax.set_ylabel("Best Fitness")
+    ax.set_title("GA Convergence")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    st.pyplot(fig)
+
+    # Validation note
+    if best_fit == MAX_FITNESS and ones_count == TARGET_ONES:
+        st.success("Perfect match achieved: ones = 40 and fitness = 80 ✅")
+    else:
+        st.info("GA may reach near-optimal solutions; try another seed to explore further.")
+
+st.caption("© 2026 Simple GA demo (80 bits, optimum at 40 ones).")
