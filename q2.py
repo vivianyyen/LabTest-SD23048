@@ -34,7 +34,7 @@ GITHUB_JSON_URL = "https://raw.githubusercontent.com/vivianyyen/LabTest-SD23048/
 try:
     response = requests.get(GITHUB_JSON_URL)
     response.raise_for_status()
-    RULES = json.loads(GITHUB_JSON_URL)
+    RULES = json.loads(response.text)
 except Exception as e:
     st.error(f"Failed to load rules from GitHub. Using default empty rules. Details: {e}")
     RULES = []
