@@ -80,7 +80,7 @@ def evolve(pop: np.ndarray, generations: int):
 # ---- Streamlit UI ----
 st.set_page_config(page_title="Bit Pattern GA (80 bits, target ones = 40)", page_icon="🧬", layout="centered")
 
-st.title("🧬 Genetic Algorithm: Evolve a 80-bit Pattern")
+st.title("Genetic Algorithm: Evolve a 80-bit Pattern")
 st.caption(
     "Fixed requirements: Population = 300, Chromosome Length = 80, Generations = 50.\n"
     "Fitness peaks at ones = 40, with max fitness = 80."
@@ -137,7 +137,7 @@ if run_btn:
 
     # Validation note
     if best_fit == MAX_FITNESS and ones_count == TARGET_ONES:
-        st.success("Perfect match achieved: ones = 40 and fitness = 80 ✅")
+        st.success("Perfect match achieved: ones = 40 and fitness = 80")
     else:
         st.info("GA may reach near-optimal solutions; try another seed to explore further.")
 
